@@ -11,7 +11,9 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 app.post('/api/generate', async (req, res) => {
   try {
     const { prompt, imageBase64 } = req.body;
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
+    
+    // التحديث للنموذج المعتمد الجديد
+    const model = genAI.getGenerativeModel({ model: "gemini-3.8-flash" });
 
     let contents = [];
     if (imageBase64) {
