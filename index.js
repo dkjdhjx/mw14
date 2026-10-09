@@ -8,12 +8,15 @@ app.use(express.json({ limit: '10mb' }));
 
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
 
-// قائمة بالنماذج المتاحة حسب الأولوية
-const MODELS_PRIORITY = [
-  "gemini-2.5-flash",
+// قائمة بالنماذج الأكثر استقراراً حسب الأولوية
+const MODELS_TO_TRY = [
   "gemini-1.5-flash",
-  "gemini-1.5-pro"
+  "gemini-1.5-pro",
+  "gemini-1.0-pro"
 ];
+
+// دالة تأخير بين المحاولات عند وجود ضغط
+const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 app.post('/api/generate', async (req, res) => {
   const { prompt, imageBase64 } = req.body;
@@ -34,28 +37,26 @@ app.post('/api/generate', async (req, res) => {
     contents = [prompt];
   }
 
-  let lastError = null;
+  // تجربة كل نموذج مرتين مع الانتظار
+  for (const modelName of MODELS_TO_TRY) {
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      try {
+        console.log(`Trying ${modelName} - Attempt ${attempt}`);
+        const model = genAI.getGenerativeModel({ model: modelName });
+        const result = await model.generateContent(contents);
+        const response = await result.response;
 
-  // المحاولة التلقائية التنقل بين النماذج في حال وجود ضغط (503)
-  for (const modelName of MODELS_PRIORITY) {
-    try {
-      console.log(`Trying model: ${modelName}`);
-      const model = genAI.getGenerativeModel({ model: modelName });
-      const result = await model.generateContent(contents);
-      const response = await result.response;
-      
-      // في حال النجاح نرجع النتيجة فوراً ونوقف المحاولات
-      return res.json({ result: response.text() });
-    } catch (error) {
-      console.error(`Error with ${modelName}:`, error.message);
-      lastError = error;
-      // إذا كان الخطأ بسبب الضغط (503)، سيستمر السيرفر للمحاولة بالنموذج التالي
+        return res.json({ result: response.text() });
+      } catch (error) {
+        console.error(`Error with ${modelName} (attempt ${attempt}):`, error.message);
+        // إذا كان خطأ ضغط (503)، ننتظر ثانيتين ثم نكرر أو ننتقل للنموذج التالي
+        await sleep(2000);
+      }
     }
   }
 
-  // إذا فشلت كل النماذج بسبب الضغط العالي
-  res.status(503).json({ 
-    error: "السيرفرات تعاني من ضغط عالٍ حالياً، يرجى إعادة المحاولة بعد بضع ثوانٍ." 
+  res.status(503).json({
+    error: "سيرفرات جوجل تشهد ضغطاً كبيراً جداً الآن، يرجى الانتظار دقيقة والمحاولة مرة أخرى."
   });
 });
 
